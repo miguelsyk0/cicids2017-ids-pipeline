@@ -23,15 +23,7 @@ class XGBoostModel:
     def __init__(self, random_state=42):
         # CHANGE HERE: tune these later based on your results
         # tree_method='hist' is important for a dataset this large,
-        # it is much faster than the default method on 1M+ rows
-        #
-        # This is set up for MULTICLASS classification (15 labels:
-        # Benign + 14 attack types), not multi-label. Each row gets
-        # exactly ONE predicted label out of the 15.
-        # num_class=15 must match your actual number of unique labels
-        # after encoding, update this if your team ends up using
-        # fewer or more classes (e.g. if some rare attack types get
-        # dropped or grouped together during cleaning)
+
         self.model = XGBClassifier(
             objective='multi:softmax',
             num_class=15,
@@ -102,7 +94,7 @@ class XGBoostModel:
         print(f"Model loaded from {path}")
 
     # ============================================
-    # EVALUATION METRICS (merged into this class)
+    # EVALUATION METRICS
     # ============================================
     def evaluate(self, y_true, y_pred):
         """
