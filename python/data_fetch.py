@@ -118,6 +118,6 @@ def fetch_training_data(chunksize: int = 100_000, view_name: str = "vw_ml_traini
   return fetch_query(query, chunksize=chunksize)
 
 if __name__ == "__main__":
-  sample = fetch_table("fact_flows", limit=10)
+  sample = fetch_table("dbo.cic_typed", limit=10)
   print(sample.head())
   print(f"Shape: {sample.shape}")
