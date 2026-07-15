@@ -29,7 +29,7 @@ from sklearn.metrics import (
 
 
 class RuleBasedModel:
-    def __init__(self):
+    def __init__(self, class_labels=None):
         self.model_name = "Rule-Based Signature Engine"
         self.is_fitted = False
 
@@ -67,12 +67,23 @@ class RuleBasedModel:
         }
 
         # ============================================
-        # CHANGE HERE: this list must match your actual LabelEncoder
-        # class order exactly (print label_encoder.classes_ to check),
-        # since predictions are returned as encoded numbers based on
-        # this list's index positions
+        # class_labels defaults to the hardcoded list below, but you can
+        # (and should, once available) pass in encoder.classes_.tolist()
+        # from preprocessing.encode_labels() instead:
+        #
+        #   from preprocessing import load_artifact
+        #   encoder = load_artifact("artifacts/label_encoder.joblib")
+        #   rule_model = RuleBasedModel(class_labels=encoder.classes_.tolist())
+        #
+        # This matters because xgboost_model.py ALSO needs this exact
+        # same order (via its own class_labels_ / encoder), and right now
+        # that order is hand-typed independently in two files. If the two
+        # ever drift apart (e.g. a class is dropped or renamed and only
+        # one file gets updated), predictions would be silently
+        # mislabeled without either file raising an error. Passing the
+        # same saved encoder into both models removes that risk entirely.
         # ============================================
-        self.class_labels = [
+        self.class_labels = class_labels or [
             "BENIGN",
             "Bot",
             "DDoS",
@@ -100,15 +111,17 @@ class RuleBasedModel:
         instead of hardcoded guesses. Safe to skip and rely on the
         manual thresholds above if you prefer full manual control.
 
-        CHANGE HERE: column names below (e.g. 'Flow Duration') must
-        match your actual cleaned dataset's column names exactly.
+        CHANGE HERE: column names below must match your actual cleaned
+        dataset's column names exactly -- these use the project's real
+        cic_typed schema (snake_case), NOT the original CICIDS2017 CSV
+        headers (which use "Flow Duration" style with spaces/capitals).
         """
         try:
             self.thresholds["dos_flow_packets_per_sec_min"] = X_train[
-                "Flow Packets/s"
+                "flow_packets_s"
             ].quantile(0.95)
             self.thresholds["portscan_duration_max"] = X_train[
-                "Flow Duration"
+                "flow_duration"
             ].quantile(0.05)
             print("Thresholds auto-tuned from training data percentiles.")
         except KeyError as e:
@@ -121,75 +134,55 @@ class RuleBasedModel:
     # ============================================
     def predict(self, X_test):
         """
-        Applies rules row by row. Returns predictions as ENCODED
-        integers matching self.class_labels order, so it plugs into
-        the same evaluation functions as your XGBoost model.
+        Applies rules to the whole DataFrame at once (vectorized via
+        np.select), rather than row-by-row. Confirmed by timing: row-by-row
+        iterrows() projects to ~13-60s on a full ~566K-row test set;
+        np.select does the same first-match-wins logic in a fraction of
+        that. Returns predictions as ENCODED integers matching
+        self.class_labels order, so it plugs into the same evaluation
+        functions as your XGBoost model.
 
-        CHANGE HERE: column names (e.g. 'Destination Port',
-        'Flow Duration') must match your actual cleaned dataset's
-        column names exactly. Adjust or add rules based on which
-        features your final dataset actually keeps.
+        Column names below match the project's actual cic_typed schema
+        (snake_case) -- NOT the original CICIDS2017 CSV headers. Adjust
+        or add rules based on which features your final dataset keeps.
+
+        Rule order matters: np.select evaluates conditions top-to-bottom
+        and takes the FIRST match, mirroring the original if/elif chain's
+        priority (e.g. a row matching both the DoS and Bot thresholds
+        gets DoS, since that condition is listed first).
         """
-        predictions = []
         t = self.thresholds
 
-        for _, row in X_test.iterrows():
-            label = "BENIGN"  # default assumption if no rule matches
+        duration = X_test.get("flow_duration", pd.Series(0, index=X_test.index))
+        fwd_packets = X_test.get("total_fwd_packets", pd.Series(0, index=X_test.index))
+        flow_pps = X_test.get("flow_packets_s", pd.Series(0, index=X_test.index))
+        flow_bps = X_test.get("flow_bytes_s", pd.Series(0, index=X_test.index))
+        dst_port = X_test.get("destination_port", pd.Series(-1, index=X_test.index))
 
-            duration = row.get("Flow Duration", 0)
-            fwd_packets = row.get("Total Fwd Packets", 0)
-            flow_pps = row.get("Flow Packets/s", 0)
-            flow_bps = row.get("Flow Bytes/s", 0)
-            dst_port = row.get("Destination Port", -1)
+        conditions = [
+            (duration <= t["portscan_duration_max"]) & (fwd_packets <= t["portscan_fwd_packets_max"]),
+            (flow_pps >= t["dos_flow_packets_per_sec_min"]) | (flow_bps >= t["dos_flow_bytes_per_sec_min"]),
+            (dst_port == t["ftp_port"]) & (duration >= t["bruteforce_duration_min"]),
+            (dst_port == t["ssh_port"]) & (duration >= t["bruteforce_duration_min"]),
+            (dst_port == t["heartbleed_port"]) & (flow_bps >= t["heartbleed_bytes_min"]),
+            (duration >= t["bot_duration_min"]) & (fwd_packets <= t["bot_fwd_packets_max"]),
+            dst_port.isin(t["web_ports"]),
+        ]
+        choices = [
+            "PortScan",
+            "DoS Hulk",  # CHANGE HERE: split into DDoS/GoldenEye/Slowloris/
+                         # Slowhttptest if you add more specific rules later
+            "FTP-Patator",
+            "SSH-Patator",
+            "Heartbleed",
+            "Bot",
+            "Web Attack - Brute Force",  # CHANGE HERE: rough placeholder,
+                                         # flag as a known limitation in your BRD
+        ]
 
-            # --- PortScan ---
-            if (
-                duration <= t["portscan_duration_max"]
-                and fwd_packets <= t["portscan_fwd_packets_max"]
-            ):
-                label = "PortScan"
-
-            # --- DoS / DDoS (grouped generically here) ---
-            elif (
-                flow_pps >= t["dos_flow_packets_per_sec_min"]
-                or flow_bps >= t["dos_flow_bytes_per_sec_min"]
-            ):
-                label = "DoS Hulk"  # CHANGE HERE: split into DDoS/GoldenEye/
-                # Slowloris/Slowhttptest if you add more
-                # specific rules per type later
-
-            # --- Brute Force (FTP/SSH) ---
-            elif dst_port == t["ftp_port"] and duration >= t["bruteforce_duration_min"]:
-                label = "FTP-Patator"
-            elif dst_port == t["ssh_port"] and duration >= t["bruteforce_duration_min"]:
-                label = "SSH-Patator"
-
-            # --- Heartbleed ---
-            elif (
-                dst_port == t["heartbleed_port"]
-                and flow_bps >= t["heartbleed_bytes_min"]
-            ):
-                label = "Heartbleed"
-
-            # --- Bot ---
-            elif (
-                duration >= t["bot_duration_min"]
-                and fwd_packets <= t["bot_fwd_packets_max"]
-            ):
-                label = "Bot"
-
-            # --- Web Attacks (generic, since flow-level features
-            # alone can't distinguish Brute Force vs XSS vs SQL
-            # Injection without payload inspection) ---
-            elif dst_port in t["web_ports"]:
-                label = "Web Attack - Brute Force"  # CHANGE HERE: this is
-                # a rough placeholder,
-                # flag as a known
-                # limitation in your BRD
-
-            predictions.append(self.class_labels.index(label))
-
-        return np.array(predictions)
+        labels = np.select(conditions, choices, default="BENIGN")
+        label_to_index = {label: idx for idx, label in enumerate(self.class_labels)}
+        return np.array([label_to_index[label] for label in labels])
 
     # ============================================
     # EVALUATION METRICS (same structure as XGBoostModel)
@@ -249,17 +242,25 @@ class RuleBasedModel:
 if __name__ == "__main__":
 
     # ============================================
-    # CHANGE HERE: load your real, final dataset
-    # Rule-based models don't need SMOTE'd training data since
-    # there's no real "training," but you can still pass X_train
-    # into .fit() if you want auto-tuned thresholds. y_test should
-    # be ENCODED the same way as your XGBoost pipeline for fair
-    # comparison.
+    # Real pipeline wiring:
+    #
+    # from data_fetch import fetch_training_data
+    # from preprocessing import split_data, load_artifact
+    #
+    # df = pd.concat(fetch_training_data(chunksize=200_000), ignore_index=True)
+    # df = df.drop(columns=["binary_label"])
+    # X_train, X_test, y_train, y_test = split_data(df, target_col="label")
+    #
+    # IMPORTANT: this model reads RAW, UNSCALED, named features directly --
+    # consistent with the project's rule-based-layer design (thresholds
+    # like "duration <= 100" only mean something in real units). Do NOT
+    # pass X_train/X_test through fit_scaler() or encode_categoricals()
+    # before this model -- that's for XGBoost/Isolation Forest only.
+    #
+    # encoder = load_artifact("artifacts/label_encoder.joblib")
+    # rule_model = RuleBasedModel(class_labels=encoder.classes_.tolist())
+    # y_test_encoded = encoder.transform(y_test)
     # ============================================
-    # Example:
-    # X_train = pd.read_csv("X_train_smote.csv")  # optional, for auto-tuning
-    # X_test = pd.read_csv("X_test.csv")
-    # y_test = pd.read_csv("y_test.csv").values.ravel()
 
     X_train, X_test, y_test = (
         None,
