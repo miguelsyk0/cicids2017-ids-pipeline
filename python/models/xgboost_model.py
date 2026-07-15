@@ -14,8 +14,12 @@ import joblib
 import pandas as pd
 from xgboost import XGBClassifier
 from sklearn.metrics import (
-    accuracy_score, precision_score, recall_score,
-    f1_score, confusion_matrix, classification_report
+    accuracy_score,
+    precision_score,
+    recall_score,
+    f1_score,
+    confusion_matrix,
+    classification_report,
 )
 
 
@@ -25,15 +29,15 @@ class XGBoostModel:
         # tree_method='hist' is important for a dataset this large,
 
         self.model = XGBClassifier(
-            objective='multi:softmax',
+            objective="multi:softmax",
             num_class=15,
             n_estimators=300,
             max_depth=8,
             learning_rate=0.1,
-            tree_method='hist',
-            eval_metric='mlogloss',
+            tree_method="hist",
+            eval_metric="mlogloss",
             random_state=random_state,
-            n_jobs=-1  # uses all CPU cores available
+            n_jobs=-1,  # uses all CPU cores available
         )
         self.is_trained = False
         self.model_name = "XGBoost"
@@ -74,10 +78,9 @@ class XGBoostModel:
         if feature_names is None:
             feature_names = [f"feature_{i}" for i in range(len(importances))]
 
-        importance_df = pd.DataFrame({
-            'Feature': feature_names,
-            'Importance': importances
-        }).sort_values(by='Importance', ascending=False)
+        importance_df = pd.DataFrame(
+            {"Feature": feature_names, "Importance": importances}
+        ).sort_values(by="Importance", ascending=False)
 
         return importance_df
 
@@ -103,11 +106,11 @@ class XGBoostModel:
         imbalanced classes.
         """
         metrics = {
-            'Model': self.model_name,
-            'Accuracy': accuracy_score(y_true, y_pred),
-            'Precision': precision_score(y_true, y_pred, average='weighted'),
-            'Recall': recall_score(y_true, y_pred, average='weighted'),
-            'F1_Score': f1_score(y_true, y_pred, average='weighted')
+            "Model": self.model_name,
+            "Accuracy": accuracy_score(y_true, y_pred),
+            "Precision": precision_score(y_true, y_pred, average="weighted"),
+            "Recall": recall_score(y_true, y_pred, average="weighted"),
+            "F1_Score": f1_score(y_true, y_pred, average="weighted"),
         }
         return metrics
 
@@ -133,16 +136,19 @@ class XGBoostModel:
         if overall metrics look good.
         """
         report = classification_report(
-            y_true, y_pred,
-            target_names=class_labels,
-            output_dict=True
+            y_true, y_pred, target_names=class_labels, output_dict=True
         )
         return pd.DataFrame(report).transpose()
 
-    def export_for_powerbi(self, metrics_dict, cm_df, report_df,
-                            metrics_path="xgboost_metrics_summary.csv",
-                            cm_path="xgboost_confusion_matrix.csv",
-                            report_path="xgboost_classification_report.csv"):
+    def export_for_powerbi(
+        self,
+        metrics_dict,
+        cm_df,
+        report_df,
+        metrics_path="xgboost_metrics_summary.csv",
+        cm_path="xgboost_confusion_matrix.csv",
+        report_path="xgboost_classification_report.csv",
+    ):
         """
         Exports all evaluation outputs as CSV, ready to load into
         Power BI for the Model Performance dashboard page.
@@ -172,7 +178,12 @@ if __name__ == "__main__":
     # X_test = pd.read_csv("X_test.csv")
     # y_test = pd.read_csv("y_test.csv").values.ravel()
 
-    X_train, y_train, X_test, y_test = None, None, None, None  # placeholders, remove once real data is loaded
+    X_train, y_train, X_test, y_test = (
+        None,
+        None,
+        None,
+        None,
+    )  # placeholders, remove once real data is loaded
 
     if X_train is None:
         raise Exception(
@@ -182,8 +193,8 @@ if __name__ == "__main__":
         )
 
     # CHANGE HERE: pass real feature names and class labels
-    feature_names = None   # e.g. X_train.columns.tolist()
-    class_labels = None    # e.g. label_encoder.classes_.tolist()
+    feature_names = None  # e.g. X_train.columns.tolist()
+    class_labels = None  # e.g. label_encoder.classes_.tolist()
 
     # Reference only, the 15 CICIDS2017 labels (Benign + 14 attack
     # types). Your actual class_labels list above should match
