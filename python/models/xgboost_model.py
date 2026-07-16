@@ -9,6 +9,7 @@ model, predict, evaluate, and export results for Power BI, all in
 one run.
 """
 
+import os
 import time
 import joblib
 import pandas as pd
@@ -17,6 +18,11 @@ from sklearn.metrics import (
     accuracy_score, precision_score, recall_score,
     f1_score, confusion_matrix, classification_report
 )
+
+METRICS_DIR = os.path.abspath(
+    os.path.join(os.path.dirname(__file__), "..", "..", "data", "metrics")
+)
+os.makedirs(METRICS_DIR, exist_ok=True)
 
 
 class XGBoostModel:
@@ -208,13 +214,15 @@ class XGBoostModel:
         Exports all evaluation outputs as CSV, ready to load into
         Power BI for the Model Performance dashboard page.
         """
-        pd.DataFrame([metrics_dict]).to_csv(metrics_path, index=False)
-        cm_df.to_csv(cm_path)
-        report_df.to_csv(report_path)
+        pd.DataFrame([metrics_dict]).to_csv(
+            os.path.join(METRICS_DIR, metrics_path), index=False
+        )
+        cm_df.to_csv(os.path.join(METRICS_DIR, cm_path))
+        report_df.to_csv(os.path.join(METRICS_DIR, report_path))
 
-        print(f"Exported: {metrics_path}")
-        print(f"Exported: {cm_path}")
-        print(f"Exported: {report_path}")
+        print(f"Exported: {os.path.join(METRICS_DIR, metrics_path)}")
+        print(f"Exported: {os.path.join(METRICS_DIR, cm_path)}")
+        print(f"Exported: {os.path.join(METRICS_DIR, report_path)}")
 
 
 # ============================================

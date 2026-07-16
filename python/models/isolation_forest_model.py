@@ -39,6 +39,7 @@ KEY DESIGN CONSTRAINTS (do not violate these -- see preprocessing.py):
        ONLY the continuous flow-measurement columns.
 """
 
+import os
 import time
 import numpy as np
 import pandas as pd
@@ -52,6 +53,11 @@ from sklearn.metrics import (
     confusion_matrix,
     classification_report,
 )
+
+METRICS_DIR = os.path.abspath(
+    os.path.join(os.path.dirname(__file__), "..", "..", "data", "metrics")
+)
+os.makedirs(METRICS_DIR, exist_ok=True)
 
 
 class IsolationForestModel:
@@ -252,16 +258,18 @@ class IsolationForestModel:
         from XGBoost's per-model metrics since this model produces a
         continuous score, not just a class label.
         """
-        pd.DataFrame([metrics_dict]).to_csv(metrics_path, index=False)
-        cm_df.to_csv(cm_path)
-        report_df.to_csv(report_path)
-        print(f"Exported: {metrics_path}")
-        print(f"Exported: {cm_path}")
-        print(f"Exported: {report_path}")
+        pd.DataFrame([metrics_dict]).to_csv(
+            os.path.join(METRICS_DIR, metrics_path), index=False
+        )
+        cm_df.to_csv(os.path.join(METRICS_DIR, cm_path))
+        report_df.to_csv(os.path.join(METRICS_DIR, report_path))
+        print(f"Exported: {os.path.join(METRICS_DIR, metrics_path)}")
+        print(f"Exported: {os.path.join(METRICS_DIR, cm_path)}")
+        print(f"Exported: {os.path.join(METRICS_DIR, report_path)}")
 
         if scores_df is not None:
-            scores_df.to_csv(scores_path, index=False)
-            print(f"Exported: {scores_path}")
+            scores_df.to_csv(os.path.join(METRICS_DIR, scores_path), index=False)
+            print(f"Exported: {os.path.join(METRICS_DIR, scores_path)}")
 
 
 # ============================================

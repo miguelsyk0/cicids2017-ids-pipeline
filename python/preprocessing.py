@@ -83,6 +83,8 @@ from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import RobustScaler, LabelEncoder
 from imblearn.over_sampling import BorderlineSMOTE
 from imblearn.combine import SMOTEENN
+from typing import cast, Union
+import numpy as np
 
 
 def engineer_timestamp(df: pd.DataFrame, timestamp_col: str = "timestamp", drop_original: bool = True) -> pd.DataFrame:
@@ -264,7 +266,7 @@ def fit_scaler(X_train: pd.DataFrame, columns: Optional[list] = None, exclude: O
     return scaler, X_train_scaled
 
 
-def transform_scaler(scaler: RobustScaler, X: pd.DataFrame, columns: list = None) -> pd.DataFrame:
+def transform_scaler(scaler: RobustScaler, X: pd.DataFrame, columns: Optional[list] = None) -> pd.DataFrame:
     """
     Applies an ALREADY-FITTED scaler to new data (test set, or later, live
     pcap-derived features in Streamlit). Never re-fits.
@@ -291,6 +293,63 @@ def transform_scaler(scaler: RobustScaler, X: pd.DataFrame, columns: list = None
     X_scaled[cols] = scaler.transform(X[cols])
 
     return X_scaled
+
+def impute_missing(X_train: pd.DataFrame, X_test: pd.DataFrame, columns: Optional[list] = None):    
+    """
+    Fills remaining NaN values with the TRAINING set's median, per column.
+    Run this AFTER fit_scaler()/transform_scaler(), BEFORE apply_smote() --
+    confirmed by testing against real data that RobustScaler silently
+    tolerates NaN (scales around it, leaves it in place), but
+    BorderlineSMOTE/SMOTEENN reject it outright with "Input X contains
+    NaN". This means NaN can survive scaling undetected and only surface
+    as a crash at the SMOTE step, which is exactly what happened here.
+ 
+    Why this exists even though cic_typed's SQL cleaning already handles
+    Infinity/NaN in flow_bytes_s/flow_packets_s: that specific fix only
+    covers the known division-by-zero case in those two rate columns.
+    Other columns can still have NULLs from TRY_CAST failures during
+    staging that never got the same treatment. Median (not 0) is used
+    here since it's a more defensible default for arbitrary numeric flow
+    features than an arbitrary constant -- document whichever choice you
+    make in the BRD.
+ 
+    Parameters:
+        X_train, X_test (pd.DataFrame): outputs of fit_scaler()/
+                        transform_scaler(). Should NOT include one-hot
+                        dummy columns unless you're comfortable "median
+                        imputing" a 0/1 column (usually fine since dummies
+                        rarely have NaN, but worth being aware of).
+        columns (list[str], optional): specific columns to impute.
+                        Defaults to all numeric columns in X_train.
+ 
+    Returns:
+        X_train_imputed, X_test_imputed, fill_values:
+            X_train_imputed, X_test_imputed (pd.DataFrame)
+            fill_values (dict): {column: median_used} -- log this in your
+                        BRD/notebook so the imputation is documented, not
+                        silent.
+ 
+    Example:
+        X_train_scaled, X_test_scaled, fill_values = impute_missing(
+            X_train_scaled, X_test_scaled
+        )
+        print("Columns imputed:", fill_values)
+    """
+    cols = columns if columns else X_train.select_dtypes(include="number").columns.tolist()
+ 
+    fill_values = {}
+    X_train_imputed = X_train.copy()
+    X_test_imputed = X_test.copy()
+ 
+    for col in cols:
+        if X_train_imputed[col].isna().any() or X_test_imputed[col].isna().any():
+            median = X_train_imputed[col].median()
+            fill_values[col] = median
+            X_train_imputed[col] = X_train_imputed[col].fillna(median)
+            X_test_imputed[col] = X_test_imputed[col].fillna(median)
+ 
+    return X_train_imputed, X_test_imputed, fill_values
+
 
 
 def build_smote_strategy(y_train, min_samples: int = 2000, max_ratio_to_majority: float = 0.5):
@@ -340,7 +399,8 @@ def build_smote_strategy(y_train, min_samples: int = 2000, max_ratio_to_majority
 
 
 def apply_smote(X_train: pd.DataFrame, y_train: pd.Series, variant: str = "borderline",
-                 sampling_strategy="auto", k_neighbors: int = 5, random_state: int = 42):
+                 sampling_strategy: Union[str, dict, float] = "auto",
+                 k_neighbors: int = 5, random_state: int = 42):
     """
     Balances the TRAINING set only. Must be called AFTER fit_scaler(), and
     must NEVER be called on X_test/y_test.
@@ -380,20 +440,22 @@ def apply_smote(X_train: pd.DataFrame, y_train: pd.Series, variant: str = "borde
     """
     if variant == "borderline":
         sampler = BorderlineSMOTE(
-            sampling_strategy=sampling_strategy,
+            sampling_strategy=cast(str, sampling_strategy),
             k_neighbors=k_neighbors,
             random_state=random_state
         )
     elif variant == "smoteenn":
         sampler = SMOTEENN(
-            sampling_strategy=sampling_strategy,
+            sampling_strategy=cast(str, sampling_strategy),
             random_state=random_state
         )
     else:
         raise ValueError(f"Unknown variant '{variant}'. Use 'borderline' or 'smoteenn'.")
 
-    X_resampled, y_resampled = sampler.fit_resample(X_train, y_train)
-
+    X_resampled, y_resampled = cast(
+        "tuple[pd.DataFrame, pd.Series]",
+        sampler.fit_resample(X_train, y_train)
+    )
     # KNOWN GOTCHA (confirmed via manual testing on this project):
     # BorderlineSMOTE only synthesizes points for minority samples it flags
     # as "in danger" (near the boundary with the majority class). If a class
@@ -452,8 +514,8 @@ def encode_labels(y_train, y_test):
         predicted_labels = encoder.inverse_transform(y_pred)
     """
     encoder = LabelEncoder()
-    y_train_encoded = encoder.fit_transform(y_train)
-    y_test_encoded = encoder.transform(y_test)
+    y_train_encoded = np.asarray(encoder.fit_transform(y_train))
+    y_test_encoded = np.asarray(encoder.transform(y_test))
     return encoder, y_train_encoded, y_test_encoded
 
 

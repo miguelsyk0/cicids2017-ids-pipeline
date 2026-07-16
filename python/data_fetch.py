@@ -95,9 +95,7 @@ def fetch_table(
     return cast(pd.DataFrame, fetch_query(query))
 
 
-def fetch_training_data(
-    chunksize: Optional[int] = 100_000, view_name: str = "vw_ml_training_data"
-):
+def fetch_training_data(chunksize: int = 100_000, source_table: str = "cic_typed"):    
     """
     Fetches the full cleaned dataset in chunks, shaped for the ML training
     pipeline (i.e. the star schema already joined back into one flat table).
@@ -121,7 +119,7 @@ def fetch_training_data(
         chunks = fetch_training_data(chunksize=200_000)
         full_df = pd.concat(chunks, ignore_index=True)
     """
-    query = f"SELECT * FROM {view_name}"
+    query = f"SELECT * FROM {source_table}"
     return fetch_query(query, chunksize=chunksize)
 
 

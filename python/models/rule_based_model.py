@@ -16,6 +16,7 @@ Evaluation metrics are built directly into this same class,
 matching the structure of xgboost_model.py.
 """
 
+import os
 import numpy as np
 import pandas as pd
 from sklearn.metrics import (
@@ -26,6 +27,11 @@ from sklearn.metrics import (
     confusion_matrix,
     classification_report,
 )
+
+METRICS_DIR = os.path.abspath(
+    os.path.join(os.path.dirname(__file__), "..", "..", "data", "metrics")
+)
+os.makedirs(METRICS_DIR, exist_ok=True)
 
 
 class RuleBasedModel:
@@ -181,6 +187,27 @@ class RuleBasedModel:
         ]
 
         labels = np.select(conditions, choices, default="BENIGN")
+
+        # Validate upfront that self.class_labels actually covers every
+        # label the rule logic can produce. Caught by testing: if the
+        # class_labels passed in (e.g. from a saved LabelEncoder) doesn't
+        # happen to include a class the rules can output -- which can
+        # happen if that class was absent from whatever split the encoder
+        # was fit on -- this used to crash deep inside a dict lookup with
+        # a bare KeyError. Failing here instead gives a clear, actionable
+        # message about exactly what's missing and why.
+        possible_outputs = set(choices) | {"BENIGN"}
+        missing = possible_outputs - set(self.class_labels)
+        if missing:
+            raise ValueError(
+                f"self.class_labels is missing {sorted(missing)}, which the "
+                f"rule engine's logic can produce. This usually means the "
+                f"LabelEncoder passed in (or the split it was fit on) didn't "
+                f"see every class the rules cover. Pass a complete "
+                f"class_labels list, or confirm this split genuinely never "
+                f"produces {sorted(missing)}."
+            )
+
         label_to_index = {label: idx for idx, label in enumerate(self.class_labels)}
         return np.array([label_to_index[label] for label in labels])
 
@@ -188,14 +215,22 @@ class RuleBasedModel:
     # EVALUATION METRICS (same structure as XGBoostModel)
     # ============================================
     def evaluate(self, y_true, y_pred):
+        """
+        Reports weighted AND macro, matching the pattern in
+        xgboost_model.py and isolation_forest_model.py so all three
+        models' metrics dicts share the same keys -- required for a
+        clean side-by-side comparison table (see run_pipeline.py's
+        build_comparison_table()).
+        """
         metrics = {
             "Model": self.model_name,
             "Accuracy": accuracy_score(y_true, y_pred),
-            "Precision": precision_score(
-                y_true, y_pred, average="weighted", zero_division=0
-            ),
-            "Recall": recall_score(y_true, y_pred, average="weighted", zero_division=0),
-            "F1_Score": f1_score(y_true, y_pred, average="weighted", zero_division=0),
+            "Precision_Weighted": precision_score(y_true, y_pred, average="weighted", zero_division=0),
+            "Recall_Weighted": recall_score(y_true, y_pred, average="weighted", zero_division=0),
+            "F1_Weighted": f1_score(y_true, y_pred, average="weighted", zero_division=0),
+            "Precision_Macro": precision_score(y_true, y_pred, average="macro", zero_division=0),
+            "Recall_Macro": recall_score(y_true, y_pred, average="macro", zero_division=0),
+            "F1_Macro": f1_score(y_true, y_pred, average="macro", zero_division=0),
         }
         return metrics
 
@@ -226,13 +261,15 @@ class RuleBasedModel:
         cm_path="rulebased_confusion_matrix.csv",
         report_path="rulebased_classification_report.csv",
     ):
-        pd.DataFrame([metrics_dict]).to_csv(metrics_path, index=False)
-        cm_df.to_csv(cm_path)
-        report_df.to_csv(report_path)
+        pd.DataFrame([metrics_dict]).to_csv(
+            os.path.join(METRICS_DIR, metrics_path), index=False
+        )
+        cm_df.to_csv(os.path.join(METRICS_DIR, cm_path))
+        report_df.to_csv(os.path.join(METRICS_DIR, report_path))
 
-        print(f"Exported: {metrics_path}")
-        print(f"Exported: {cm_path}")
-        print(f"Exported: {report_path}")
+        print(f"Exported: {os.path.join(METRICS_DIR, metrics_path)}")
+        print(f"Exported: {os.path.join(METRICS_DIR, cm_path)}")
+        print(f"Exported: {os.path.join(METRICS_DIR, report_path)}")
 
 
 # ============================================
