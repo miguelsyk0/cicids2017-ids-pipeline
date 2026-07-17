@@ -27,7 +27,8 @@ CREATE TABLE dim_label (
 
 INSERT INTO dim_label (label, binary_label)
 SELECT DISTINCT label, binary_label
-FROM cic_typed;
+FROM cic_typed
+WHERE ISNULL(LTRIM(RTRIM(label)), '') <> '';
 
 -- Dimension: Day
 CREATE TABLE dim_day (
@@ -57,7 +58,8 @@ CREATE TABLE dim_protocol (
 
 INSERT INTO dim_protocol (protocol)
 SELECT DISTINCT protocol
-FROM cic_typed;
+FROM cic_typed
+WHERE ISNULL(LTRIM(RTRIM(protocol)), '') <> '';
 
 -- Fact table: one row per flow, foreign keys to each dimension,
 -- plus every numeric measurement

@@ -53,7 +53,6 @@ import os
 import re
 import glob
 import pandas as pd
-import pyodbc
 from urllib.parse import quote_plus
 from sqlalchemy import create_engine, event
 

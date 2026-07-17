@@ -44,7 +44,7 @@ from models.isolation_forest_model import IsolationForestModel
 from models.xgboost_model import XGBoostModel
 from typing import Iterable, cast
 
-CATEGORICAL_COLS = ["protocol", "port_group", "source_day"]
+CATEGORICAL_COLS = ["protocol", "port_group"]
 ARTIFACT_DIR = "artifacts"
 METRICS_DIR = os.path.abspath(
     os.path.join(os.path.dirname(__file__), "..", "data", "metrics")
@@ -128,7 +128,7 @@ def run_isolation_forest(df):
 
     # Target is binary_label, not label -- drop the multiclass label
     # entirely so it can't leak into X.
-    df_iso = df.drop(columns=["label"])
+    df_iso = df.drop(columns=["label", "source_day"])
     X_train, X_test, y_train, y_test = split_data(df_iso, target_col="binary_label")
 
     X_train_enc, X_test_enc, dummy_cols = encode_categoricals(X_train, X_test, CATEGORICAL_COLS)
@@ -182,7 +182,7 @@ def run_xgboost(df):
 
     # Target is the multiclass label -- drop binary_label so it can't
     # leak in as a second encoding of the same information.
-    df_xgb = df.drop(columns=["binary_label"])
+    df_xgb = df.drop(columns=["binary_label", "source_day"])  # source_day is categorical, not numeric
     X_train, X_test, y_train, y_test = split_data(df_xgb, target_col="label")
     
     # --- Diagnostic: check for exact feature-duplicates across train/test ---

@@ -10,7 +10,7 @@ GO
 SELECT
     TRY_CAST(source_port AS INT)                       AS source_port,
     TRY_CAST(destination_port AS INT)                  AS destination_port,
-    protocol,
+    NULLIF(LTRIM(RTRIM(protocol)),'')                    AS protocol,
     TRY_CONVERT(DATETIME, [timestamp], 103)             AS [timestamp],
     TRY_CAST(flow_duration AS FLOAT)                    AS flow_duration,
     TRY_CAST(total_fwd_packets AS FLOAT)                AS total_fwd_packets,
@@ -88,7 +88,7 @@ SELECT
     TRY_CAST(idle_std AS FLOAT)                          AS idle_std,
     TRY_CAST(idle_max AS FLOAT)                          AS idle_max,
     TRY_CAST(idle_min AS FLOAT)                          AS idle_min,
-    LTRIM(RTRIM(label))                                  AS label,
+    NULLIF(LTRIM(RTRIM(label)),'')                       AS label,
     source_day
 INTO cic_typed
 FROM raw_flows;
