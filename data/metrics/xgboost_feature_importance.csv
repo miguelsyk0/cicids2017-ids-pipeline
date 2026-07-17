@@ -9,7 +9,7 @@ source_day_Wednesday,0.04721842
 port_group_SSH,0.04599251
 bwd_header_length,0.04073758
 source_day_Unknown,0.03656126
-idle_max,0.024935639
+1dle_max,0.024935639
 total_backward_packets,0.021495806
 port_group_Web,0.019161552
 fwd_psh_flags,0.018463906

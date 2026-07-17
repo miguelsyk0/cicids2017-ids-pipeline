@@ -1,8 +1,17 @@
+IF OBJECT_ID('dbo.cic_typed', 'U') IS NOT NULL
+    DROP TABLE dbo.cic_typed;
+GO
+
+UPDATE raw_flows
+SET source_day = 'Thursday-Afternoon'
+WHERE source_file = 'thursday-workinghours-afternoon-infileteration.pcap_iscx.csv';
+GO
+
 SELECT
     TRY_CAST(source_port AS INT)                       AS source_port,
     TRY_CAST(destination_port AS INT)                  AS destination_port,
     protocol,
-    TRY_CAST([timestamp] AS DATETIME)                  AS [timestamp],
+    TRY_CONVERT(DATETIME, [timestamp], 103)             AS [timestamp],
     TRY_CAST(flow_duration AS FLOAT)                    AS flow_duration,
     TRY_CAST(total_fwd_packets AS FLOAT)                AS total_fwd_packets,
     TRY_CAST(total_backward_packets AS FLOAT)           AS total_backward_packets,

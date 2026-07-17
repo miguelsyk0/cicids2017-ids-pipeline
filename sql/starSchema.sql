@@ -1,3 +1,23 @@
+IF OBJECT_ID('dbo.fact_network_flow', 'U') IS NOT NULL
+    DROP TABLE dbo.fact_network_flow;
+GO
+
+IF OBJECT_ID('dbo.dim_label', 'U') IS NOT NULL
+    DROP TABLE dbo.dim_label;
+GO
+
+IF OBJECT_ID('dbo.dim_day', 'U') IS NOT NULL
+    DROP TABLE dbo.dim_day;
+GO
+
+IF OBJECT_ID('dbo.dim_port_group', 'U') IS NOT NULL
+    DROP TABLE dbo.dim_port_group;
+GO
+
+IF OBJECT_ID('dbo.dim_protocol', 'U') IS NOT NULL
+    DROP TABLE dbo.dim_protocol;
+GO
+
 -- Dimension: Label
 CREATE TABLE dim_label (
     label_id INT IDENTITY(1,1) PRIMARY KEY,
