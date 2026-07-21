@@ -169,6 +169,8 @@ def run_isolation_forest(df):
         "predicted_label": y_pred,
         "anomaly_score": scores
     })
+    cm_long_df = iso_model.get_confusion_matrix_long(y_test, y_pred)
+    iso_model.export_for_powerbi(metrics, cm_df, report_df, scores_df=scores_df, cm_long_df=cm_long_df)
     iso_model.export_for_powerbi(metrics, cm_df, report_df, scores_df=scores_df)
     iso_model.save_model(os.path.join(ARTIFACT_DIR, "isolation_forest_model.joblib"))
 

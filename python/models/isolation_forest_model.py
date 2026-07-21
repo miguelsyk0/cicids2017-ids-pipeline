@@ -229,7 +229,24 @@ class IsolationForestModel:
             )
         cm = confusion_matrix(y_true_text, y_pred_text, labels=class_labels)
         return pd.DataFrame(cm, index=class_labels, columns=class_labels)
-
+    
+    def get_confusion_matrix_long(self, y_true_text, y_pred_text, class_labels=None):
+        """
+        Long-format version of the confusion matrix: one row per
+        (true_label, predicted_label) cell instead of a wide pivot. Power BI's
+        DAX (CALCULATE + filter on two columns) wants this shape directly --
+        a wide 2x2 pivot forces LOOKUPVALUE gymnastics for no reason on a
+        table this small.
+        """
+        cm_df = self.get_confusion_matrix(y_true_text, y_pred_text, class_labels)
+        long_df = (
+            cm_df
+            .reset_index()
+            .melt(id_vars="index", var_name="predicted_label", value_name="row_count")
+            .rename(columns={"index": "true_label"})
+        )
+        return long_df
+    
     def get_classification_report(self, y_true_text, y_pred_text):
         """
         Precision/recall/F1 for BENIGN vs ATTACK individually -- useful
@@ -246,18 +263,13 @@ class IsolationForestModel:
         cm_df,
         report_df,
         scores_df=None,
+        cm_long_df=None,          # NEW
         metrics_path="isolation_forest_metrics_summary.csv",
         cm_path="isolation_forest_confusion_matrix.csv",
         report_path="isolation_forest_classification_report.csv",
         scores_path="isolation_forest_anomaly_scores.csv",
+        cm_long_path="isolation_forest_confusion_matrix_long.csv",   # NEW
     ):
-        """
-        Exports all evaluation outputs as CSV for Power BI. `scores_df`
-        (optional) is per-row anomaly scores -- useful for a severity
-        heatmap or "most suspicious flows" table on the dashboard, distinct
-        from XGBoost's per-model metrics since this model produces a
-        continuous score, not just a class label.
-        """
         pd.DataFrame([metrics_dict]).to_csv(
             os.path.join(METRICS_DIR, metrics_path), index=False
         )
@@ -270,6 +282,10 @@ class IsolationForestModel:
         if scores_df is not None:
             scores_df.to_csv(os.path.join(METRICS_DIR, scores_path), index=False)
             print(f"Exported: {os.path.join(METRICS_DIR, scores_path)}")
+
+        if cm_long_df is not None:                                   # NEW
+            cm_long_df.to_csv(os.path.join(METRICS_DIR, cm_long_path), index=False)
+            print(f"Exported: {os.path.join(METRICS_DIR, cm_long_path)}")
 
 
 # ============================================

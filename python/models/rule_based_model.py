@@ -103,7 +103,7 @@ class RuleBasedModel:
             "PortScan",
             "SSH-Patator",
             "Web Attack - Brute Force",
-            "Web Attack - Sql Injection",
+            "Web Attack - SQL Injection",
             "Web Attack - XSS",
         ]
 
