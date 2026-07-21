@@ -54,6 +54,9 @@ MODEL_SUMMARY_FILES = {
 FEATURE_IMPORTANCE_FILE = "xgboost_feature_importance.csv"  # XGBoost-only
 FEATURE_IMPORTANCE_MODEL_ID = 1
 
+ANOMALY_SCORES_FILE = "isolation_forest_anomaly_scores.csv"
+ANOMALY_SCORES_MODEL_ID = 2  # IsolationForest only, per dim_model
+
 # Already-built fact CSVs (from the two earlier scripts) -> target SQL table
 DIRECT_LOAD_FILES = {
     "fact_classification_metrics_multiclass.csv": "fact_classification_metrics_multiclass",
@@ -135,6 +138,45 @@ def build_fact_feature_importance(df: pd.DataFrame, name_to_id: dict) -> pd.Data
     })
 
 
+def build_fact_anomaly_scores(engine, path: str) -> pd.DataFrame:
+    """
+    Loads the raw anomaly scores CSV (true_label/predicted_label as TEXT,
+    per IsolationForestModel.export_for_powerbi()) and joins against
+    dim_binary_label to resolve real FK ids -- mirrors the manual SSMS
+    migration already done for the existing fact_anomaly_scores data,
+    but repeatable on every pipeline rerun instead of a one-off.
+    """
+    if not os.path.exists(path):
+        raise FileNotFoundError(f"Missing {path}")
+    df = pd.read_csv(path)
+
+    expected_cols = {"true_label", "predicted_label", "anomaly_score"}
+    if not expected_cols.issubset(df.columns):
+        raise ValueError(
+            f"{path} missing expected columns. Found: {df.columns.tolist()}, "
+            f"expected at least: {expected_cols}"
+        )
+
+    dim_binary = pd.read_sql(
+        "SELECT binary_label_id, binary_label FROM dim_binary_label", engine
+    )
+    label_to_id = dict(zip(dim_binary["binary_label"], dim_binary["binary_label_id"]))
+
+    unmapped = set(df["true_label"]) | set(df["predicted_label"])
+    unmapped -= set(label_to_id.keys())
+    if unmapped:
+        raise ValueError(
+            f"Labels in {path} not found in dim_binary_label: {sorted(unmapped)}"
+        )
+
+    return pd.DataFrame({
+        "model_id": ANOMALY_SCORES_MODEL_ID,
+        "actual_binary_label_id": df["true_label"].map(label_to_id),
+        "predicted_binary_label_id": df["predicted_label"].map(label_to_id),
+        "anomaly_score": df["anomaly_score"],
+    })
+
+
 def load_table(engine, df: pd.DataFrame, table_name: str):
     with engine.begin() as conn:
         conn.execute(text(f"DELETE FROM {table_name}"))  # idempotent reruns --
@@ -162,6 +204,10 @@ def main():
     fact_fi_df = build_fact_feature_importance(fi_source_df, name_to_id)
     fact_fi_df.to_sql("fact_feature_importance", engine, if_exists="append", index=False)
     print(f"Loaded {len(fact_fi_df)} rows into fact_feature_importance")
+
+    print("\nBuilding fact_anomaly_scores from real Isolation Forest export...")
+    anomaly_df = build_fact_anomaly_scores(engine, os.path.join(METRICS_DIR, ANOMALY_SCORES_FILE))
+    load_table(engine, anomaly_df, "fact_anomaly_scores")
 
     print("\nLoading already-built classification/confusion CSVs directly into SQL...")
     for filename, table_name in DIRECT_LOAD_FILES.items():
